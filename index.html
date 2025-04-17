@@ -22,8 +22,8 @@
   <script>
     // ここをあなたの環境に合わせて書き換えてください！
     const poolData = {
-      UserPoolId: 'ap-northeast-1_SL35w9jeR', // ← あなたのUserPool ID
-      ClientId: '2s5ek2gqdek8df072ro0hmlg1t' // ← あなたのApp Client ID
+      UserPoolId: '******', // ← あなたのUserPool ID
+      ClientId: '******' // ← あなたのApp Client ID
     };
     const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 
@@ -62,7 +62,7 @@
     async function submitProgress() {
       const progressText = document.getElementById("progressInput").value;
 
-      const response = await fetch('https://gt1h97lxf5.execute-api.ap-northeast-1.amazonaws.com/prod/save', {
+      const response = await fetch('https://*****.execute-api.ap-northeast-1.amazonaws.com/prod/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
