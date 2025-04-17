@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Auth Portal</title>
+</head>
+<body>
+  <h2>認証ポータル</h2>
+
+  <h3>登録・ログイン</h3>
+  <input type="email" id="email" placeholder="メールアドレス"><br>
+  <input type="password" id="password" placeholder="パスワード"><br>
+
+  <button onclick="signUp()">新規登録</button>
+  <button onclick="login()">ログイン</button>
+
+  <div id="authResult" style="margin-top: 20px;"></div>
+
+  <!-- SDK & ライブラリ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1380.0/aws-sdk.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.15/dist/amazon-cognito-identity.min.js"></script>
+
+  <script>
+    const poolData = {
+      UserPoolId: 'ap-northeast-1_SL35w9jeR', // ← あなたのUserPool ID
+      ClientId: '2s5ek2gqdek8df072ro0hmlg1t' // ← あなたのApp Client ID
+    };
+
+    const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+
+    function signUp() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      const attributeList = [
+        new AmazonCognitoIdentity.CognitoUserAttribute({
+          Name: "email",
+          Value: email
+        })
+      ];
+
+      userPool.signUp(email, password, attributeList, null, function(err, result) {
+        if (err) {
+          document.getElementById("authResult").innerText = "登録エラー: " + err.message;
+          return;
+        }
+
+        document.getElementById("authResult").innerHTML = `
+          登録成功！<br>
+          メールに届いた確認コードを入力してください：<br>
+          <input id="confirmCode" placeholder="確認コード"><br>
+          <button onclick="confirmSignup('${email}')">確認する</button>
+        `;
+      });
+    }
+
+    function confirmSignup(email) {
+      const code = document.getElementById("confirmCode").value;
+      const userData = {
+        Username: email,
+        Pool: userPool
+      };
+
+      const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+      cognitoUser.confirmRegistration(code, true, function(err, result) {
+        if (err) {
+          document.getElementById("authResult").innerText = "確認エラー: " + err.message;
+        } else {
+          document.getElementById("authResult").innerText = "確認完了！ログインしてください。";
+        }
+      });
+    }
+
+    function login() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      const authDetails = new AmazonCognitoIdentity.AuthenticationDetails({
+        Username: email,
+        Password: password
+      });
+
+      const userData = {
+        Username: email,
+        Pool: userPool
+      };
+
+      const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+      cognitoUser.authenticateUser(authDetails, {
+        onSuccess: function(result) {
+          document.getElementById("authResult").innerText = "ログイン成功！";
+          // IDトークンなど必要ならここで取得可能
+        },
+        onFailure: function(err) {
+          document.getElementById("authResult").innerText = "ログイン失敗: " + err.message;
+        }
+      });
+    }
+  </script>
+</body>
+</html>

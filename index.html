@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>学習進捗ポータル</title>
+</head>
+<body>
+  <h1>学習進捗ポータル</h1>
+
+  <div id="loginSection">
+    <button onclick="login()">ログイン</button>
+  </div>
+
+  <div id="progressSection" style="display:none;">
+    <p id="userInfo"></p>
+    <textarea id="progressInput" placeholder="今日の学習進捗を入力..."></textarea><br>
+    <button onclick="submitProgress()">進捗を保存</button>
+    <p id="result"></p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.0.4/dist/amazon-cognito-identity.min.js"></script>
+  <script>
+    // ここをあなたの環境に合わせて書き換えてください！
+    const poolData = {
+      UserPoolId: 'ap-northeast-1_SL35w9jeR', // ← あなたのUserPool ID
+      ClientId: '2s5ek2gqdek8df072ro0hmlg1t' // ← あなたのApp Client ID
+    };
+    const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+
+    let cognitoUser;
+    let idToken;
+
+    function login() {
+      const username = prompt("メールアドレス:");
+      const password = prompt("パスワード:");
+
+      const authData = {
+        Username: username,
+        Password: password
+      };
+
+      const authDetails = new AmazonCognitoIdentity.AuthenticationDetails(authData);
+      const userData = {
+        Username: username,
+        Pool: userPool
+      };
+
+      cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+      cognitoUser.authenticateUser(authDetails, {
+        onSuccess: function (result) {
+          idToken = result.getIdToken().getJwtToken();
+          document.getElementById("loginSection").style.display = "none";
+          document.getElementById("progressSection").style.display = "block";
+          document.getElementById("userInfo").innerText = `ようこそ ${username} さん`;
+        },
+        onFailure: function (err) {
+          alert("ログイン失敗: " + err.message);
+        }
+      });
+    }
+
+    async function submitProgress() {
+      const progressText = document.getElementById("progressInput").value;
+
+      const response = await fetch('https://gt1h97lxf5.execute-api.ap-northeast-1.amazonaws.com/prod/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': idToken
+        },
+        body: JSON.stringify({
+          userId: cognitoUser.getUsername(),
+          progress: progressText
+        })
+      });
+
+      if (response.ok) {
+        document.getElementById("result").innerText = "保存しました！";
+      } else {
+        const err = await response.text();
+        document.getElementById("result").innerText = "エラー: " + err;
+      }
+    }
+  </script>
+</body>
+</html>

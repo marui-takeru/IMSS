@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cognito + S3 + DynamoDB + Lambda を使った進捗管理ポータル
+
+Resources:
+
+  ### S3 バケット（静的ウェブサイト） ###
+  LearningPortalBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: learning-portal-bucket
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+
+  ### DynamoDB（進捗保存用） ###
+  ProgressTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: LearningProgress
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+  ### Cognito User Pool ###
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: LearningUserPool
+      AutoVerifiedAttributes:
+        - email
+
+  ### Cognito User Pool Client ###
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: LearningAppClient
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+
+  ### IAM ロール（Lambda用） ###
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaProgressExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt ProgressTable.Arn
+
+  ### Lambda 関数（進捗保存） ###
+  SaveProgressFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: SaveProgress
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: nodejs18.x
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk');
+          const db = new AWS.DynamoDB.DocumentClient();
+
+          exports.handler = async (event) => {
+            const body = JSON.parse(event.body);
+            const params = {
+              TableName: 'LearningProgress',
+              Item: {
+                userId: body.userId,
+                progress: body.progress
+              }
+            };
+            await db.put(params).promise();
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ message: 'Progress saved' }),
+            };
+          };
+
+  ### API Gateway（Lambda公開） ###
+  SaveProgressApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: SaveProgressAPI
+
+  SaveProgressResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt SaveProgressApi.RootResourceId
+      PathPart: save
+      RestApiId: !Ref SaveProgressApi
+
+  SaveProgressMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref SaveProgressApi
+      ResourceId: !Ref SaveProgressResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+          - Region: !Ref AWS::Region
+            LambdaArn: !GetAtt SaveProgressFunction.Arn
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SaveProgressFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SaveProgressApi}/*/*/save"
+
+Outputs:
+  WebsiteURL:
+    Description: S3 Website URL
+    Value: !Sub "http://${LearningPortalBucket}.s3-website-${AWS::Region}.amazonaws.com"
+
+  CognitoUserPoolId:
+    Value: !Ref UserPool
+
+  CognitoAppClientId:
+    Value: !Ref UserPoolClient
+
+  APIEndpoint:
+    Value: !Sub "https://${SaveProgressApi}.execute-api.${AWS::Region}.amazonaws.com/prod/save"
